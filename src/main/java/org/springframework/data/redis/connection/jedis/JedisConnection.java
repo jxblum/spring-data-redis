@@ -55,6 +55,7 @@ import org.springframework.data.redis.core.ScanIteration;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.types.RedisClientInfo;
 import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.util.StringUtils;
@@ -92,7 +93,7 @@ import redis.clients.util.Pool;
 public class JedisConnection extends AbstractRedisConnection {
 
 	private static final Field CLIENT_FIELD;
-	private static final Method SEND_COMMAND;
+	private static Method SEND_COMMAND;
 	private static final Method GET_RESPONSE;
 
 	private static final String SHUTDOWN_SCRIPT = "return redis.call('SHUTDOWN','%s')";
@@ -103,8 +104,21 @@ public class JedisConnection extends AbstractRedisConnection {
 	static {
 		CLIENT_FIELD = ReflectionUtils.findField(BinaryJedis.class, "client", Client.class);
 		ReflectionUtils.makeAccessible(CLIENT_FIELD);
-		SEND_COMMAND = ReflectionUtils.findMethod(Connection.class, "sendCommand", new Class[] { Command.class,
-				byte[][].class });
+
+		try {
+			if (ClassUtils.isPresent("redis.clients.jedis.ProtocolCommand", null)) {
+				SEND_COMMAND = ReflectionUtils.findMethod(Connection.class, "sendCommand",
+						new Class[] { ClassUtils.forName("redis.clients.jedis.ProtocolCommand", null), byte[][].class });
+			} else {
+				SEND_COMMAND = ReflectionUtils.findMethod(Connection.class, "sendCommand",
+						new Class[] { ClassUtils.forName("redis.clients.jedis.Command", null), byte[][].class });
+			}
+		} catch (Exception e) {} finally {
+			if (SEND_COMMAND == null) {
+				throw new NoClassDefFoundError("cannot find commmand");
+			}
+		}
+
 		ReflectionUtils.makeAccessible(SEND_COMMAND);
 		GET_RESPONSE = ReflectionUtils.findMethod(Queable.class, "getResponse", Builder.class);
 		ReflectionUtils.makeAccessible(GET_RESPONSE);
